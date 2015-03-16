@@ -1,2 +1,2 @@
 # paleowar
-paleo war
+projet paleo war
