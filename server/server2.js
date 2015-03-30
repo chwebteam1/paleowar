@@ -1,26 +1,13 @@
-var app = require('express')();
-var server = require('http').createServer(app);
-var io = require('socket.io')(server);
+var io  = require('socket.io');  
+var server = io.listen(3000);
 var nbPlayers = 0;
 var db;
 var score = [];
+var timer = 0; // A IMPLEMENTER LE TIMER
 
 for (var i=0; i< 10; i++)
   score[i] = 0;
 
-
-app.get('*', function(req, res){
-  res.send(null);
-});
-
-// création serveur
-server.listen(3000,"192.168.43.138", function(){
-	console.log("listenning on *:3000");
-});
-
-io.listen(server);
-
-/*
 // connection à la base de données
 var mysql = require('mysql');
 var connection =  mysql.createConnection({
@@ -31,13 +18,12 @@ var connection =  mysql.createConnection({
 });
 
 connection.connect();
-*/
 
-io.on('connection', function (socket) {
-  console.log('user connected');
- 
-  /*
-  // lien entre le RFID et le joueur
+
+server.sockets.on('connection', function(socket) {  
+	console.log("user connected");
+
+ // lien entre le RFID et le joueur
   socket.on('Ready', function(json_Ready){
     var idPlayer = json_Ready.idPlayer;
     console.log(json_Ready);
@@ -48,8 +34,8 @@ io.on('connection', function (socket) {
   	}else{								// retourne l'id RFID du joueur
   		nbPlayers++;
 
-      findRFID(function(idPlayer){
-        socket.emit('ReturnReady', idPlayer);
+      findRFID(idPlayer, function(rfid){
+        socket.emit('ReturnReady', rfid);
       });
 
       addPlayer(idPlayer, json_Ready.pseudo);
@@ -99,15 +85,14 @@ io.on('connection', function (socket) {
   // lorsqu'un joueur se déconnecte
   socket.on('disconnect', function () {
     console.log('user disconnected');
-  });*/
+  });
 });
 
 
 /*  ============================ Fonction utiles  ============================ */
-/*
 // récupère l'RFID en fonction de l'id du joueur
 function findRFID(id, callback){
-  connection.query('SELECT RFID FROM tags WHERE id = '+ id , function(err, rows, fields) {
+  connection.query('SELECT RFID FROM tags WHERE id = '+ parseInt(id) , function(err, rows, fields) {
     if (err) throw err;
     callback(rows[0]["RFID"]);
   });
@@ -115,7 +100,7 @@ function findRFID(id, callback){
 
 // parcours la liste des RFIDS et vérifie que l'id lu soit dans la BD
 function verifyRFID(RFID, callback){
-  connection.query('SELECT * FROM tags WHERE RFID = '+ RFID , function(err, rows, fields) {
+  connection.query('SELECT * FROM tags WHERE RFID = '+ JSON.stringify(RFID) , function(err, rows, fields) {
     if (err) 
       return false;
     else
@@ -125,7 +110,7 @@ function verifyRFID(RFID, callback){
 
 // parcours la liste des id dans joueurs pour savoir si l'idJoueur est utilisé
 function findPlayer(id, callback){
-  connection.query('SELECT * FROM joueurs WHERE id = '+ id , function(err, rows, fields) {
+  connection.query('SELECT * FROM joueurs WHERE id = '+ parseInt(id) , function(err, rows, fields) {
     if (err) 
       return false;
     else
@@ -135,7 +120,7 @@ function findPlayer(id, callback){
 
 // parcours les pseudo et vérifie si le pseudo choisi n'est pas déjà utilisé
 function findPseudo(pseudo, callback){
-  connection.query('SELECT * FROM joueurs WHERE pseudo = '+ pseudo , function(err, rows, fields) {
+  connection.query('SELECT * FROM joueurs WHERE pseudo = '+ JSON.stringify(pseudo) , function(err, rows, fields) {
     if (err)
       return false;
     else
@@ -145,7 +130,7 @@ function findPseudo(pseudo, callback){
 
 // parcours la liste des joueurs pour trouver le vainqueur
 function findWinner(callback){
-  connection.query('SELECT pseudo, MAX(score) FROM joueurs', function(err, rows, fields) {
+  connection.query('SELECT pseudo, MAX('+JSON.stringify(score)+') FROM joueurs', function(err, rows, fields) {
     if (err) throw err;
       var winner = {
         'winner' : rows[0]['pseudo'],
@@ -158,16 +143,15 @@ function findWinner(callback){
 
 // ajoute le joueur dans la base de données
 function addPlayer(id, pseudo){
-  connection.query('INSERT INTO joueurs (id, pseudo, score) VALUES ('+id+',' + 
-    pseudo+',0)' , function(err, rows, fields) {
+  connection.query('INSERT INTO joueurs (id, pseudo, score) VALUES ('+parseInt(id)+',' + 
+    JSON.stringify(pseudo)+',0)' , function(err, rows, fields) {
     if (err) throw err;
   });
 }
 
 // met à jour le score dans la bd
 function setScore(id, score, callback){
-  connection.query('UPDATE joueurs SET score = '+score+' WHERE id ='+id , function(err, rows, fields) {
+  connection.query('UPDATE joueurs SET score = '+parseInt(score)+' WHERE id ='+parseInt(id) , function(err, rows, fields) {
     if (err) throw err;
   });
 }
-*/
