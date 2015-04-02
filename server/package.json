@@ -1,0 +1,10 @@
+{
+  "name": "paleoWar",
+  "version": "0.0.1",
+  "description": "application paleo war",
+  "dependencies": {
+    "express": "^4.12.3",
+    "mysql": "^2.6.1",
+    "socket.io": "^0.9.16"
+  }
+}
