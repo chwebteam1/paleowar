@@ -102,10 +102,11 @@ function endTimer(socket){
 
     // envoi le winner
     findWinner(function(data){
-      socket.emit('winner',data);
-      socket.broadcast.emit('winner',data);
+      socket.emit('Winner',data);
+      socket.broadcast.emit('Winner',data);
     });
 
+    clean();
     console.log("end of game");
   }
 }
@@ -123,14 +124,16 @@ socket.on('TAG_Read', function(json_tag){
   // test si le RFID est dans la base de données 
   // en fonction du temps on sait quelle est l'équipe 
   if (timer <= timeRound){ // 5 première minutes equipe 1
-    if (idPlayer <= (totalPlayers/2)) 
+    if (idPlayer <= (totalPlayers/2)) {
       equipe = 1;
-    else
+      socket.emit("Switch");
+    } else
       return;
   }else if (timer <= (timeRound * 2)){ // 5 dernière minutes equipe 2 
-    if (idPlayer > (totalPlayers/2))
+    if (idPlayer > (totalPlayers/2)){
       equipe = 2;
-    else
+      socket.emit("Switch");
+    }else
       return;
   }
 
@@ -198,7 +201,7 @@ function findPseudo(pseudo, callback){
 
 // parcours la liste des joueurs pour trouver le vainqueur
 function findWinner(callback){
-  connection.query('SELECT pseudo, MAX(score) FROM joueurs', function(err, rows, fields) {
+  connection.query('SELECT pseudo, MAX(score) AS "score" FROM joueurs', function(err, rows, fields) {
     if (err) throw err;
       var winner = {
         'winner' : rows[0]['pseudo'],
@@ -228,6 +231,12 @@ function addPlayer(id, pseudo){
 // met à jour le score dans la bd
 function setScore(id, score, callback){
   connection.query('UPDATE joueurs SET score = '+parseInt(score)+' WHERE id ='+parseInt(id) , function(err, rows, fields) {
+    if (err) throw err;
+  });
+}
+
+function clean(){
+   connection.query('DELETE FROM joueurs' , function(err, rows, fields) {
     if (err) throw err;
   });
 }
