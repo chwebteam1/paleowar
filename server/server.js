@@ -1,26 +1,15 @@
-var app = require('express')();
-var server = require('http').createServer(app);
-var io = require('socket.io')(server);
+var io  = require('socket.io');  
+var server = io.listen(3000);
 var nbPlayers = 0;
 var db;
 var score = [];
+var timer = 0; 
+var interval = null;
+var totalPlayers = 2;//10;
+var timeRound = 0.5;
+var equipe = 1;
+var secondes = 0;
 
-for (var i=0; i< 10; i++)
-  score[i] = 0;
-
-
-app.get('*', function(req, res){
-  res.send(null);
-});
-
-// création serveur
-server.listen(3000,"192.168.43.138", function(){
-	console.log("listenning on *:3000");
-});
-
-io.listen(server);
-
-/*
 // connection à la base de données
 var mysql = require('mysql');
 var connection =  mysql.createConnection({
@@ -31,121 +20,178 @@ var connection =  mysql.createConnection({
 });
 
 connection.connect();
-*/
 
-io.on('connection', function (socket) {
-  console.log('user connected');
- 
-  /*
-  // lien entre le RFID et le joueur
+server.sockets.on('connection', function(socket) {  
+	console.log("user connected");
+
+ // lien entre le RFID et le joueur
   socket.on('Ready', function(json_Ready){
     var idPlayer = json_Ready.idPlayer;
-    console.log(json_Ready);
-  	if (findPlayer(idPlayer)){ 		// test si l'idPlayer est pas déjà utilisé
-  		socket.emit('ReturnReady', "cet idPlayer est déjà utilisé");
-  	}else if (findPseudo(json_Ready.pseudo)){	// test s le pseudo est pas utiliser
-  		socket.emit('ReturnReady', "ce pseudo est déjà utilisé");
-  	}else{								// retourne l'id RFID du joueur
-  		nbPlayers++;
+    score[idPlayer] = 0;
 
-      findRFID(function(idPlayer){
-        socket.emit('ReturnReady', idPlayer);
-      });
+    // test si l'idPlayer est pas déjà utilisé
+    findPlayer(idPlayer, function(test){
+      if (test)
+        socket.emit('ReturnReady', "cet idPlayer est déjà utilisé");
+      else
+        // test si le pseudo est pas utiliser
+        findPseudo(json_Ready.pseudo,function(test){
+          if (test)
+            socket.emit('ReturnReady', "ce pseudo est déjà utilisé");
+          else{
+            // retourne l'id RFID du joueur
 
-      addPlayer(idPlayer, json_Ready.pseudo);
-  	}
-  });
+            findRFID(idPlayer, function(rfid){
+              socket.emit('ReturnReady', rfid);
+            });
 
-  // quand les 10 joueurs sont connecté on start la partie
-  if (nbPlayers == 10)
-  	socket.broadcast.emit('Start');
+            nbPlayers++;
 
-  // reception d'un tag lu
-  socket.on('TAG_Read', function(json_tag){
-  	// increment du score de la personne ayant tagger
-  	var idPlayer = json_tag.idPlayer;
-  	var RFID_Read = json_tag.id_RFID_Read;
+            addPlayer(idPlayer, json_Ready.pseudo);
 
-  	// test si le RFID est dans la base de données 
-  	// en fonction du temps on sait quelle est l'équipe 
-  	if (timer <= 5){ // 5 première minutes equipe 1
-  		if ((idPlayer <= 5) && (verifyRFID(RFID_Read)))
-  			score[idPlayer] += 1;
-  	}else if (time <= 10){ // 5 dernière minutes equipe 2	
-  		if ((idPlayer > 5) && (verifyRFID(RFID_Read))){
-        score[idPlayer] += 1 ;
-
-        var scores = {
-          'idPlayer' :idPlayer,
-          'score' : score[idPlayer]
-        };
-
-  			socket.broadcast.emit('Score', scores);   
-        setScore(idPlayer, score[idPlayer]);
-  		}
-  	}
-
-  });
-
-  // quand le timer fini on stop la partie
-  if (timer > 11){
-  	socket.broadcast.emit('Stop');
-    findWinner(function(data){
-      socket.broadcast.emit('winner',data);
+            // attend 1 secondes pour envoyer le start
+            setTimeout(function(){
+              // quand les 10 joueurs sont connecté on start la partie
+              if (nbPlayers == totalPlayers){
+                socket.emit('Start', timeRound);
+                socket.broadcast.emit('Start', timeRound);
+                getScores(function(scores){
+                  socket.emit('Score', scores);  
+                  socket.broadcast.emit('Score', scores);
+                });  
+                checkTags(socket);
+              }
+            }, 1000);
+          }
+        }); 
     });
-    timer = 0;
-  }
+  });
 
   // lorsqu'un joueur se déconnecte
   socket.on('disconnect', function () {
     console.log('user disconnected');
-  });*/
+    clearInterval(interval);
+    timer = 0;
+    nbPlayers = 0;
+    clean();
+  });
 });
 
 
 /*  ============================ Fonction utiles  ============================ */
-/*
+// fonction permettant d'implementer un timer
+function inc_timer(){
+  timer++;
+}
+
+// quand le timer fini on stop la partie
+function endTimer(socket){
+  var temps = 0;
+  temps = Math.floor(timer / 60);
+  if (temps == (timeRound * 2)){ // envoi le winner
+    findWinner(function(data){
+      socket.emit('Winner',data);
+      socket.broadcast.emit('Winner',data);
+    });
+    clean();
+    console.log("end of game");
+
+    clearInterval(interval);
+    timer = 0;
+    nbPlayers = 0;
+  }
+}
+
+
+// reception d'un tag lu
+function checkTags(socket){
+  socket.on('TAG_Read', function(json_tag){
+    console.log("TAG from " + equipe);
+    // increment du score de la personne ayant tagger
+    var idPlayer = json_tag.idPlayer;
+    var RFID_Read = json_tag.RFID_Read;
+
+    // test si le RFID est dans la base de données 
+    // en fonction du temps on sait quelle est l'équipe 
+    verifyRFID(RFID_Read, equipe, function(bool, id){
+      if(bool){
+        // augmente le score que si c'est un ennemi
+        if ((equipe == 1) && (id > totalPlayers/2)) 
+          score[idPlayer] += 1;
+        if ((equipe == 2) && (id <= totalPlayers/2))
+          score[idPlayer] += 1; 
+      } 
+     });
+
+    setScore(idPlayer, score[idPlayer]); // update le score dans la base de données
+
+    // envoi les scores de chaque joueurs 
+    getScores(function(scores){
+      socket.emit('Score', scores);  
+      socket.broadcast.emit('Score', scores);  
+    });
+  });
+
+  var temps = 0;
+  // lance le timer et verifie les tags
+  interval = setInterval(function(){
+    inc_timer(); 
+
+    temps = (timer / 60);
+    if ((temps == timeRound)){
+      console.log("switch");
+      socket.emit("Switch");
+      socket.broadcast.emit("Switch");
+      equipe = 2;
+    }
+    endTimer(socket);
+  },1000);
+}
+
 // récupère l'RFID en fonction de l'id du joueur
 function findRFID(id, callback){
-  connection.query('SELECT RFID FROM tags WHERE id = '+ id , function(err, rows, fields) {
+  connection.query('SELECT RFID FROM tags WHERE id = '+ parseInt(id) , function(err, rows, fields) {
     if (err) throw err;
     callback(rows[0]["RFID"]);
   });
 }
 
 // parcours la liste des RFIDS et vérifie que l'id lu soit dans la BD
-function verifyRFID(RFID, callback){
-  connection.query('SELECT * FROM tags WHERE RFID = '+ RFID , function(err, rows, fields) {
-    if (err) 
-      return false;
-    else
-      return true;
+function verifyRFID(RFID, equipe, callback){
+  connection.query('SELECT id FROM tags WHERE RFID = '+ JSON.stringify(RFID), function(err, rows, fields) {
+    if (err) throw err;
+    if (rows[0] == null)
+      callback(false,null);
+    else 
+      callback(true, rows[0]["id"]);
   });
 }
 
 // parcours la liste des id dans joueurs pour savoir si l'idJoueur est utilisé
 function findPlayer(id, callback){
-  connection.query('SELECT * FROM joueurs WHERE id = '+ id , function(err, rows, fields) {
-    if (err) 
-      return false;
-    else
-      return true;
+  connection.query('SELECT * FROM joueurs WHERE id = '+ parseInt(id) , function(err, rows, fields) {
+    if (err) throw err;
+    if ( rows[0] == null)
+      callback(false);
+    else 
+      callback(true);
   });
 }
 
 // parcours les pseudo et vérifie si le pseudo choisi n'est pas déjà utilisé
 function findPseudo(pseudo, callback){
-  connection.query('SELECT * FROM joueurs WHERE pseudo = '+ pseudo , function(err, rows, fields) {
-    if (err)
-      return false;
-    else
-      return true;
+  connection.query('SELECT * FROM joueurs WHERE pseudo = '+ JSON.stringify(pseudo) , function(err, rows, fields) {
+    if (err) throw err;
+    if (rows[0] == null)
+      callback(false);
+    else 
+      callback(true);
   });
 }
 
 // parcours la liste des joueurs pour trouver le vainqueur
 function findWinner(callback){
-  connection.query('SELECT pseudo, MAX(score) FROM joueurs', function(err, rows, fields) {
+  connection.query('SELECT pseudo , score FROM joueurs GROUP BY pseudo HAVING MAX(score)', function(err, rows, fields) {
     if (err) throw err;
       var winner = {
         'winner' : rows[0]['pseudo'],
@@ -156,18 +202,31 @@ function findWinner(callback){
   });
 }
 
+// parcours la liste des joueurs pour trouver le vainqueur
+function getScores(callback){
+  connection.query('SELECT * FROM joueurs', function(err, rows, fields) {
+    if (err) throw err;
+      callback(rows);
+  });
+}
+
 // ajoute le joueur dans la base de données
 function addPlayer(id, pseudo){
-  connection.query('INSERT INTO joueurs (id, pseudo, score) VALUES ('+id+',' + 
-    pseudo+',0)' , function(err, rows, fields) {
+  connection.query('INSERT INTO joueurs (id, pseudo, score) VALUES ('+parseInt(id)+',' + 
+    JSON.stringify(pseudo)+',0)' , function(err, rows, fields) {
     if (err) throw err;
   });
 }
 
 // met à jour le score dans la bd
 function setScore(id, score, callback){
-  connection.query('UPDATE joueurs SET score = '+score+' WHERE id ='+id , function(err, rows, fields) {
+  connection.query('UPDATE joueurs SET score = '+parseInt(score)+' WHERE id ='+parseInt(id) , function(err, rows, fields) {
     if (err) throw err;
   });
 }
-*/
+
+function clean(){
+   connection.query('DELETE FROM joueurs' , function(err, rows, fields) {
+    if (err) throw err;
+  });
+}
